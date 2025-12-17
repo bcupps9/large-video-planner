@@ -9,10 +9,10 @@ This repo provides training and inference code for the paper "Large Video Planne
 # Downloading the dataset
 Download all the metadata file for eight filtered dataset, and our third-party collected test set:
 ```bash
-huggingface-cli download large-video-planner/LVP \
-    --repo-type=dataset \
+huggingface-cli download KempnerInstituteAI/LVP \
     --include "data/**" \
-    --local-dir .
+    --local-dir . \
+    --local-dir-use-symlinks False
 ```
 This will download each data folder under `data/`. 
 
@@ -23,10 +23,10 @@ Please put all downloaded checkpoints within `data/ckpts`
 ## Downloading Our Fine-tuned Checkpoints
 
 ```bash
-huggingface-cli download large-video-planner/LVP \
-    --repo-type=dataset \
+huggingface-cli download KempnerInstituteAI/LVP \
     --include "checkpoints/**" \
-    --local-dir .
+    --local-dir . \
+    --local-dir-use-symlinks False
 
 mv checkpoints data/ckpts
 ```
@@ -87,14 +87,12 @@ conda activate ei_world_model
 
 ### Step 2: Install Dependencies
 
-We store python dependencies in **`requirement_updated.txt`**
+We store python dependencies in **`requirements.txt`**
 
 ```bash
 # Install core dependencies
-pip install -r requirement_updated.txt
+pip install -r requirements.txt
 
-# Install DeepSpeed (for distributed training)
-DS_BUILD_UTILS=1 DS_BUILD_FUSED_ADAM=1 DS_BUILD_CPU_ADAM=1 pip install deepspeed
 
 # Install Flash Attention (for efficient attention)
 # This may take several minutes to compile
@@ -181,12 +179,10 @@ python -m main \
   dataset=ours_test \
   experiment.tasks=[validation] \
   algorithm.logging.video_type=single \
-  cluster=fas_high \
   experiment.num_nodes=1 \
   experiment.validation.limit_batch=null \
   algorithm.hist_guidance=1.5 \
-  algorithm.lang_guidance=2.5 \
-  algorithm.logging.video_save_dir=<your-output-folder>
+  algorithm.lang_guidance=2.5
 ```
 
 ### Command Arguments Explained
@@ -214,10 +210,9 @@ python -m main \
   - Executes the `validation()` method in [experiments/exp_video.py](experiments/exp_video.py)
 
 #### Cluster Configuration
-- **`cluster=fast_high`**: SLURM cluster settings for evaluation
+- **`cluster=fast_high`**: SLURM cluster settings we used for evaluation
   - Points to: [configurations/cluster/phase3_eval.yaml](configurations/cluster/fas_high.yaml)
   - Settings: 4 H100 GPUs, 48 CPUs, 512GB memory, 1-day time limit
-  - Alternative: `cluster=fas_single` for single GPU debugging
 
 - **`experiment.num_nodes=1`**: Number of compute nodes (1 for inference)
 
@@ -239,9 +234,6 @@ python -m main \
 - **`algorithm.logging.video_type=single`**: Save videos individually
   - Alternative: `grid` - saves all videos in a grid layout
 
-- **`algorithm.logging.video_save_dir=outputs/...`**: Directory for generated videos
-  - Videos saved as MP4 files with metadata
-
 ---
 
 ## How to Run Training
@@ -256,7 +248,6 @@ python -m main \
   experiment=exp_video \
   algorithm=wan_i2v \
   dataset=mixture \
-  cluster=phase3 \
   experiment.num_nodes=32 \
   algorithm.lang_guidance=0 \
   algorithm.hist_guidance=0 \
@@ -273,7 +264,6 @@ python -m main \
   experiment=exp_video \
   algorithm=wan_toy \
   dataset=mixture \
-  cluster=phase3 \
   experiment.num_nodes=1 \
   algorithm.lang_guidance=0 \
   algorithm.hist_guidance=0 \
@@ -301,9 +291,9 @@ python -m main \
   - Weighted mixture based on dataset sizes and importance
 
 #### Cluster Configuration
-- **`cluster=phase3`**: Production training cluster settings
+- **`cluster=phase3`**: Training cluster settings we used
   - Points to: [configurations/cluster/phase3.yaml](configurations/cluster/phase3.yaml)
-  - Settings: 4 H100 GPUs per node, priority queue, 14-day time limit
+  - Settings: 4 H100 GPUs per node, 32 node, priority queue, 14-day time limit
 
 - **`experiment.num_nodes=32`**: Multi-node distributed training
   - 32 nodes × 4 GPUs = 128 GPUs for full training
