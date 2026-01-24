@@ -73,6 +73,7 @@ This document provides detailed instructions for running inference and training 
 - [Environment Setup](#environment-setup)
 - [How to Run Inference](#how-to-run-inference)
 - [How to Run Training](#how-to-run-training)
+- [How to Get Action from Video](#how-to-get-action-from-video)
 
 ---
 
@@ -107,7 +108,17 @@ pip install flash-attn --no-build-isolation
 
 **Note**: If you encounter issues with `flash-attn`, you can skip it for inference-only usage. It's primarily needed for efficient training.
 
-### Step 3: Configure WandB (Weights & Biases)
+### Step 3: Install Video-to-Robot Dependencies (Optional)
+
+If you want to convert generated videos to robot actions, install the video2robot pipeline dependencies:
+
+```bash
+cd video2robot
+git submodule update --init --recursive
+```
+Install external requirements (Hamer, Dex-retargeting, MegaSaM) following the upstream docs.
+
+### Step 4: Configure WandB (Weights & Biases)
 
 WandB is used for experiment tracking and logging.
 
@@ -130,7 +141,7 @@ wandb:
 
 Note we set wandb to offline by default, so you can go through other part of the code without setting wandb first.
 
-### Step 4: Verify Installation
+### Step 5: Verify Installation
 
 Test your installation with a quick inference run:
 
@@ -327,3 +338,62 @@ The codebase uses Hydra for hierarchical configuration management:
 4. **Task Execution**: Calls `experiment.exec_task(task)` for each task in `experiment.tasks`
    - Training: Sets up dataloaders, trainer, and runs training loop
    - Validation: Loads model, generates videos, saves outputs
+
+---
+
+## How to Get Action from Video
+
+The video2robot pipeline converts generated hand-motion videos into executable robot commands for dexterous robot hands. This enables generated videos from LVP to control real robots.
+
+### Pipeline Overview
+
+The pipeline consists of the following stages:
+
+1. **Camera Estimation (MegaSaM)**: Estimates per-frame camera intrinsics and poses from the video
+2. **Hand Pose Extraction (HAMER)**: Reconstructs 3D hand meshes and MANO parameters per frame
+3. **Camera Alignment**: Aligns HAMER wrist poses into the MegaSaM world coordinate frame
+4. **Retargeting**: Maps human hand joint angles to robot hand joint angles
+5. **Real robot Conversion**: Converts retargeted poses to G1 commands
+
+### Command
+
+```bash
+./run_video_pipeline.sh <video_name> <output_dir>
+```
+This command wraps the steps above and consolidates artifacts under `<output__dir>/<video_name>/`:
+- `hamer.json` – raw HAMER detections with per-frame wrist poses.
+- `align.json` – HAMER sequence expressed in the MegaSaM cam0/world frame.
+- `retarget_vector.json` – Inspire finger joint angles (vector retargeting results).
+- `cmd.json` – converted Inspire DOF commands ready for playback.
+- `g1.json` – wrist pose history transformed to the Inspire G1 coordinate system.
+- `<video_name>_droid.npz` – MegaSaM camera intrinsics/extrinsics and depth caches.
+- `frames/` – RGB frames extracted from the input video.
+- `summary.json` – helpful index linking the video, calibration, and retarget outputs.
+
+### Real Robot Execution
+
+For executing generated hand commands on a real robot (e.g., Unitree G1 with Inspire hands), you can integrate the hand controller with the arm controller for unified control:
+
+```python
+# Initialize hand command publisher and hand state subscriber
+self.HandCmb_publisher = ChannelPublisher(kTopicInspireCommand, MotorCmds_)
+self.HandCmb_publisher.Init()
+
+self.HandState_subscriber = ChannelSubscriber(kTopicInspireState, MotorStates_)
+self.HandState_subscriber.Init()
+
+# Initialize hand message with motor commands
+self.hand_msg = MotorCmds_()
+self.hand_msg.cmds = [unitree_go_msg_dds__MotorCmd_() for _ in range(
+    len(Inspire_Right_Hand_JointIndex) + len(Inspire_Left_Hand_JointIndex)
+)]
+```
+
+When you need to send hand commands to the robot:
+```python
+arm.HandCmb_publisher.Write(arm.hand_msg)
+```
+
+For a complete reference implementation, see the [Unitree XR Teleoperate repository](https://github.com/unitreerobotics/xr_teleoperate.git).
+
+

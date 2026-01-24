@@ -1,0 +1,6 @@
+[submodule "video2robot/hamer"]
+	path = video2robot/hamer
+	url = git@github.com:geopavlakos/hamer.git
+[submodule "video2robot/dex-retargeting"]
+	path = video2robot/dex-retargeting
+	url = git@github.com:dexsuite/dex-retargeting.git
