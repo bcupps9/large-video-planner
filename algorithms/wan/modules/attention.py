@@ -1,19 +1,31 @@
 # Copyright 2024-2025 The Alibaba Wan Team Authors. All rights reserved.
+import warnings
+
 import torch
 
+# BEGIN 3dConsistency flash-attn fallback
+# Catch broad import failures (not only ModuleNotFoundError). On older HPC
+# nodes flash-attn can be installed but still fail import with GLIBC errors.
 try:
     import flash_attn_interface
     FLASH_ATTN_3_AVAILABLE = True
-except ModuleNotFoundError:
+except Exception as e:
     FLASH_ATTN_3_AVAILABLE = False
+    warnings.warn(
+        f"[3dConsistency fallback] flash_attn_interface unavailable; "
+        f"falling back to FA2/SDPA path: {e}"
+    )
 
 try:
     import flash_attn
     FLASH_ATTN_2_AVAILABLE = True
-except ModuleNotFoundError:
+except Exception as e:
     FLASH_ATTN_2_AVAILABLE = False
-
-import warnings
+    warnings.warn(
+        f"[3dConsistency fallback] flash_attn unavailable; "
+        f"falling back to SDPA path: {e}"
+    )
+# END 3dConsistency flash-attn fallback
 
 __all__ = [
     'flash_attention',
