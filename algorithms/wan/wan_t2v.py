@@ -1,5 +1,6 @@
 import logging
 import gc
+from pathlib import Path
 import torch
 import numpy as np
 import torch.distributed as dist
@@ -567,6 +568,17 @@ class WanTextToVideo(BasePytorchAlgo):
         video_pred = self.sample_seq(batch)
         self.visualize(video_pred, batch)
 
+    def _save_video_to_path(self, video_tensor, output_path):
+        # Layout runner hook: persist per-sample prediction to an explicit path.
+        output_file = Path(output_path)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        video_uint8 = (
+            video_tensor.clamp(0, 1).mul(255).to(torch.uint8).permute(0, 2, 3, 1).cpu().numpy()
+        )
+        output_file.write_bytes(
+            numpy_to_mp4_bytes(video_uint8, fps=self.cfg.logging.fps)
+        )
+
     def visualize(self, video_pred, batch):
         video_gt = batch["videos"]
 
@@ -581,6 +593,13 @@ class WanTextToVideo(BasePytorchAlgo):
         dist.all_gather_object(all_prompts, batch["prompts"])
         all_prompts = [item for sublist in all_prompts for item in sublist]
 
+        output_paths = batch.get("output_video", None)
+        if output_paths is None:
+            output_paths = [None] * len(batch["prompts"])
+        all_output_paths = [None for _ in range(dist.get_world_size())]
+        dist.all_gather_object(all_output_paths, output_paths)
+        all_output_paths = [item for sublist in all_output_paths for item in sublist]
+
         if is_rank_zero:
             if self.cfg.logging.video_type == "single":
                 for i in range(min(len(video_vis), 16)):
@@ -590,6 +609,8 @@ class WanTextToVideo(BasePytorchAlgo):
                         fps=self.cfg.logging.fps,
                         caption=all_prompts[i],
                     )
+                    if i < len(all_output_paths) and all_output_paths[i]:
+                        self._save_video_to_path(video_vis[i], all_output_paths[i])
             else:
                 self.log_video(
                     "validation_vis/video_pred",

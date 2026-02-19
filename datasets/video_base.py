@@ -170,6 +170,14 @@ class VideoDataset(Dataset):
             "video_path": str(self.data_root / record["video_path"]),
         }
 
+        # Optional passthrough fields used by external layout runners.
+        # Keeping these keys in the batch lets inference code save outputs
+        # directly to per-sample paths without relying on logger internals.
+        if "sample_id" in record:
+            output["sample_id"] = str(record["sample_id"])
+        if "output_video" in record:
+            output["output_video"] = str(record["output_video"])
+
         if prompts is not None:
             output["prompts"] = prompts
         # if images is not None:
