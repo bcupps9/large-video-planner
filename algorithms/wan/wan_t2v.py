@@ -589,16 +589,24 @@ class WanTextToVideo(BasePytorchAlgo):
         video_vis = video_vis * 0.5 + 0.5
         video_vis = rearrange(self.all_gather(video_vis), "p b ... -> (p b) ...")
 
-        all_prompts = [None for _ in range(dist.get_world_size())]
-        dist.all_gather_object(all_prompts, batch["prompts"])
-        all_prompts = [item for sublist in all_prompts for item in sublist]
-
         output_paths = batch.get("output_video", None)
         if output_paths is None:
             output_paths = [None] * len(batch["prompts"])
-        all_output_paths = [None for _ in range(dist.get_world_size())]
-        dist.all_gather_object(all_output_paths, output_paths)
-        all_output_paths = [item for sublist in all_output_paths for item in sublist]
+
+        # Layout inference often runs in single-process mode (no initialized
+        # torch.distributed process group). Only use dist object collectives when
+        # the process group exists; otherwise keep local batch values.
+        if dist.is_available() and dist.is_initialized():
+            all_prompts = [None for _ in range(dist.get_world_size())]
+            dist.all_gather_object(all_prompts, batch["prompts"])
+            all_prompts = [item for sublist in all_prompts for item in sublist]
+
+            all_output_paths = [None for _ in range(dist.get_world_size())]
+            dist.all_gather_object(all_output_paths, output_paths)
+            all_output_paths = [item for sublist in all_output_paths for item in sublist]
+        else:
+            all_prompts = list(batch["prompts"])
+            all_output_paths = list(output_paths)
 
         if is_rank_zero:
             if self.cfg.logging.video_type == "single":
