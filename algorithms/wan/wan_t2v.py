@@ -587,7 +587,20 @@ class WanTextToVideo(BasePytorchAlgo):
         else:
             video_vis = torch.cat([video_pred, video_gt], dim=-1).cpu()
         video_vis = video_vis * 0.5 + 0.5
-        video_vis = rearrange(self.all_gather(video_vis), "p b ... -> (p b) ...")
+        gathered_video_vis = self.all_gather(video_vis)
+        # Lightning returns different shapes for self.all_gather depending on
+        # strategy: [world, batch, t, c, h, w] (distributed) vs
+        # [batch, t, c, h, w] (single-process). Normalize to [batch, t, c, h, w].
+        if gathered_video_vis.ndim == 6:
+            video_vis = rearrange(gathered_video_vis, "p b t c h w -> (p b) t c h w")
+        elif gathered_video_vis.ndim == 5:
+            video_vis = gathered_video_vis
+        elif gathered_video_vis.ndim == 4:
+            video_vis = gathered_video_vis.unsqueeze(0)
+        else:
+            raise ValueError(
+                f"Unexpected gathered video tensor shape: {tuple(gathered_video_vis.shape)}"
+            )
 
         output_paths = batch.get("output_video", None)
         if output_paths is None:
@@ -611,11 +624,12 @@ class WanTextToVideo(BasePytorchAlgo):
         if is_rank_zero:
             if self.cfg.logging.video_type == "single":
                 for i in range(min(len(video_vis), 16)):
+                    caption = all_prompts[i] if i < len(all_prompts) else None
                     self.log_video(
                         f"validation_vis/video_pred_{i}",
                         video_vis[i],
                         fps=self.cfg.logging.fps,
-                        caption=all_prompts[i],
+                        caption=caption,
                     )
                     if i < len(all_output_paths) and all_output_paths[i]:
                         self._save_video_to_path(video_vis[i], all_output_paths[i])
